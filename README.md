@@ -1,234 +1,297 @@
-# ShadowPay Private Wallet
+# ShadowPay – Privacy-Preserving Ethereum Payments
 
-ShadowPay is a full-stack Web3 prototype for privacy-first blockchain payments on Ethereum Sepolia. It demonstrates a simplified privacy-pool architecture where ETH is deposited into a fixed-denomination pool and later withdrawn with a private note, instead of making a direct wallet-to-wallet transfer on-chain.
+ShadowPay is a privacy-focused blockchain payment prototype that allows users to send ETH without publicly linking the sender and receiver addresses. It implements a simplified privacy pool architecture where funds are deposited into a smart contract and later withdrawn using a cryptographic note.
 
-## Why ShadowPay Exists
+The project demonstrates how privacy-preserving payments can be built on a transparent blockchain by separating deposits from withdrawals and using commitment-based verification.
 
-Public blockchains are excellent at verification, but standard transfers expose:
+---
 
-- sender and receiver addresses
-- transfer amounts
-- transaction timing
-- wallet relationship graphs
+# Problem
 
-That model is useful for settlement, but weak for personal or business payment privacy.
+Public blockchains like Ethereum expose financial activity. Every transaction reveals:
 
-ShadowPay introduces a privacy layer on top of Sepolia by replacing direct transfers with a pool deposit and note withdrawal flow. The blockchain can see that a deposit happened and that a withdrawal happened, but it cannot directly link which deposit funded which withdrawal.
+* Sender address
+* Receiver address
+* Amount transferred
+* Transaction timestamp
 
-## Project Overview
+This transparency is useful for security but creates privacy problems for individuals, businesses, and organizations that need confidential payments.
 
-ShadowPay includes:
+ShadowPay explores a privacy-preserving architecture that hides the relationship between sender and receiver while still allowing the blockchain to verify transactions.
 
-- a Next.js frontend with a modern Web3 dashboard
-- MetaMask wallet connection
-- a deposit flow that creates a secret note and pool commitment
-- a withdrawal flow that spends a nullifier and releases real Sepolia ETH
-- an Express backend that simulates proof generation and signs withdrawal authorization
-- lightweight JSON-backed storage for commitments and note state
-- a Solidity privacy-pool contract deployed to Ethereum Sepolia
+---
 
-## Architecture
+# Solution
 
-### Frontend
+ShadowPay uses a **fixed-denomination privacy pool** model.
 
-The frontend lives in [frontend](/Users/aditya/Developer/shadowpay-private-wallet/frontend) and provides:
+Instead of transferring ETH directly from one wallet to another, the payment is split into two independent transactions:
 
-- landing page
-- dashboard
-- deposit page
-- withdrawal page
-- confidential transaction history
+1. Deposit ETH into a privacy pool
+2. Withdraw ETH from the pool using a secret note
 
-### Backend
+Since deposits and withdrawals are not directly linked, observers cannot determine which deposit funded which withdrawal.
 
-The backend lives in [backend](/Users/aditya/Developer/shadowpay-private-wallet/backend) and is responsible for:
+---
 
-- commitment generation
-- note hashing
-- withdrawal validation
-- verifier-signature generation
-- transaction persistence
+# How It Works
 
-### Smart Contract
+The system operates in two phases.
 
-The Solidity contract lives in [contracts/ShadowPayPool.sol](/Users/aditya/Developer/shadowpay-private-wallet/contracts/ShadowPayPool.sol) and models:
+## 1. Deposit Phase
 
-- `deposit(bytes32 commitment)`
-- `withdraw(bytes32 nullifier, address receiver, bytes signature)`
-- fixed pool denomination storage
-- nullifier replay protection
+The sender deposits a fixed amount of ETH into the ShadowPay pool.
 
-## How the Privacy Pool Works
+During this process:
 
-ShadowPay uses a hackathon-friendly simulation of a privacy pool.
+* The system generates two random values: `secret` and `nullifier`
+* These values create a **commitment hash**
+* The commitment is stored on-chain
+* The ETH remains inside the pool contract
 
-### Deposit
+Example:
 
-1. The backend generates a random `secret` and `nullifier`.
-2. It hashes them into:
-   - `commitmentHash = SHA256(secret + ":" + nullifier)`
-   - `nullifierHash = SHA256(nullifier)`
-3. The frontend calls `deposit(commitmentHash)` on Sepolia with the fixed ETH amount.
-4. The pool contract stores only the commitment.
-5. The note is stored locally in the browser and can be shared off-chain.
+Sender → ShadowPay Pool
+Value: 0.01 ETH
 
-### Withdrawal
+The sender receives a **withdrawal note** that contains the secret and nullifier.
 
-1. The user provides the `secret`, `nullifier`, and receiver address.
-2. The backend recomputes the commitment and confirms the note exists and is unspent.
-3. The backend signs a withdrawal authorization for the `nullifierHash` and receiver.
-4. The frontend calls `withdraw(nullifierHash, receiver, signature)`.
-5. The contract marks the nullifier as spent and transfers ETH to the receiver.
+Example note:
 
-### Why This Hides the Link
+shadowpay-0.01ETH-8f39ab28d2c7a1df9...
 
-- the deposit stores only a commitment
-- the withdrawal uses only a nullifier and receiver
-- the contract does not receive the original commitment during withdrawal
-- observers can see deposits and withdrawals, but cannot directly match them
+---
 
-This is still a simulation, not a real zk-SNARK system. The backend acts as a trusted verifier signer instead of a zero-knowledge circuit.
+## 2. Withdrawal Phase
 
-## How Nullifiers Prevent Double Spending
+The receiver uses the withdrawal note to claim the funds.
 
-Every note has a derived `nullifierHash`. Once a withdrawal succeeds:
+The contract verifies that:
 
-- the contract marks the nullifier as spent
-- the same note cannot be withdrawn a second time
+* The commitment exists
+* The nullifier has not been used before
+* The withdrawal is valid
 
-This is the core anti-double-spend control in the prototype.
+Once verified, the ETH is transferred from the pool to the receiver's wallet.
 
-## API Endpoints
+Example:
 
-### `POST /api/generate-commitment`
+ShadowPay Pool → Receiver Wallet
+Value: 0.01 ETH
 
-Returns:
+---
 
-- `secret`
-- `nullifier`
-- `commitmentHash`
-- `nullifierHash`
-- `note`
+# Privacy Model
 
-### `POST /api/record-deposit`
+ShadowPay hides the **link between deposit and withdrawal**.
 
-Records a confirmed Sepolia deposit for a commitment.
+Observers on a blockchain explorer such as
+Etherscan
+can see:
 
-### `POST /api/withdraw`
+Wallet A → ShadowPay Pool
+ShadowPay Pool → Wallet B
 
-Validates the note and returns:
+However, they cannot prove that Wallet A paid Wallet B.
 
-- `commitmentHash`
-- `nullifierHash`
-- `signature`
+This concept is similar to privacy architectures used in protocols such as
+Tornado Cash.
 
-### `POST /api/record-withdrawal`
+---
 
-Records a confirmed Sepolia withdrawal.
+# Key Concepts
 
-### `GET /api/transactions`
+### Commitment
 
-Returns deposit and withdrawal activity history.
+A cryptographic hash representing a deposit.
 
-## User Flow
+commitment = SHA256(secret + nullifier)
 
-1. Open `http://localhost:3000`
-2. Click `Launch App`
-3. Connect MetaMask
-4. Open `Deposit`
-5. Deposit the fixed pool amount on Sepolia
-6. Back up the generated note
-7. Open `Withdraw`
-8. Paste or select the note and choose a receiver address
-9. Confirm the withdrawal in MetaMask
-10. Review the confidential activity in the history page
+The commitment is stored in the smart contract.
 
-## Run Locally
+### Nullifier
 
-### Prerequisites
+A unique value used to prevent double withdrawals.
 
-- Node.js 18 or newer
-- npm
-- MetaMask
-- Sepolia ETH for wallet gas and pool testing
-- a Sepolia RPC URL
+Each nullifier can only be used once.
 
-## Deploy the Contract to Sepolia
+### Withdrawal Note
 
-The deployment toolchain lives in [contracts](/Users/aditya/Developer/shadowpay-private-wallet/contracts).
+A private string containing the secret and nullifier required to withdraw funds.
 
-```bash
-cd contracts
-npm install
-cp .env.example .env
-npm run compile
-npm run deploy:sepolia
-npm run smoke:sepolia
-```
+Anyone with this note can withdraw the funds, so it must be kept secure.
 
-`contracts/.env` must include:
+---
 
-```bash
-SEPOLIA_RPC_URL=https://sepolia.infura.io/v3/YOUR_KEY
-SEPOLIA_PRIVATE_KEY=your_private_key
-POOL_VERIFIER_PRIVATE_KEY=your_private_key_or_dedicated_verifier_key
-SHADOWPAY_POOL_DEPOSIT_AMOUNT_ETH=0.01
-```
+# Architecture
 
-After deployment, the script writes the contract address to [contracts/deployments/sepolia.json](/Users/aditya/Developer/shadowpay-private-wallet/contracts/deployments/sepolia.json).
-The optional `npm run smoke:sepolia` script performs a live deposit and withdrawal against the running backend so you can verify the pool end to end.
+ShadowPay consists of three main components.
 
-### Backend
+## Frontend
 
-```bash
+Built using:
+
+* Next.js
+* TypeScript
+* TailwindCSS
+* MetaMask wallet integration
+
+Features:
+
+* Wallet connection
+* Deposit interface
+* Withdrawal interface
+* Transaction history
+* Privacy pool dashboard
+
+---
+
+## Backend
+
+Built using:
+
+* Node.js
+* Express
+
+Responsibilities:
+
+* Generate commitments
+* Create withdrawal notes
+* Validate withdrawal requests
+* Provide APIs for frontend interaction
+
+---
+
+## Smart Contract
+
+Written in Solidity.
+
+Responsibilities:
+
+* Accept ETH deposits
+* Store commitment hashes
+* Prevent double withdrawals using nullifiers
+* Transfer ETH to withdrawal addresses
+
+---
+
+# User Flow
+
+1. User connects their wallet
+2. User deposits a fixed amount of ETH into the ShadowPay pool
+3. System generates a withdrawal note
+4. User shares the note with the receiver
+5. Receiver enters the note in the ShadowPay app
+6. Receiver withdraws ETH to their wallet
+
+The blockchain records deposits and withdrawals but cannot link them.
+
+---
+
+# Tech Stack
+
+Frontend
+
+* Next.js
+* React
+* TailwindCSS
+* Ethers.js
+
+Backend
+
+* Node.js
+* Express
+
+Blockchain
+
+* Solidity smart contracts
+* Hardhat deployment
+
+Network
+
+* Sepolia
+
+---
+
+# Running the Project Locally
+
+Clone the repository.
+
+git clone https://github.com/adityapatle01/shadowpay-private-wallet
+
+cd shadowpay-private-wallet
+
+---
+
+Install backend dependencies.
+
 cd backend
 npm install
+
+Start backend server.
+
 npm start
-```
 
-Backend runs on `http://localhost:3001`.
+---
 
-Create `backend/.env` if it does not exist:
+Install frontend dependencies.
 
-```bash
-POOL_VERIFIER_PRIVATE_KEY=your_private_key_or_dedicated_verifier_key
-SHADOWPAY_POOL_DEPOSIT_AMOUNT_ETH=0.01
-```
-
-### Frontend
-
-```bash
-cd frontend
+cd ../frontend
 npm install
+
+Run frontend development server.
+
 npm run dev
-```
 
-Frontend runs on `http://localhost:3000`.
+Frontend will run on:
 
-Create `frontend/.env.local`:
+http://localhost:3000
 
-```bash
-NEXT_PUBLIC_SHADOWPAY_API_URL=http://localhost:3001/api
-NEXT_PUBLIC_SHADOWPAY_CONTRACT_ADDRESS=0xYourSepoliaPoolAddress
-```
+---
 
-## Local Demo Checklist
+# Deploying the Smart Contract
 
-- open `http://localhost:3000`
-- connect MetaMask
-- switch MetaMask to Sepolia when prompted
-- deposit the fixed pool amount
-- back up the generated note
-- withdraw to a fresh receiver address
-- confirm the history page shows the activity as `Confidential`
+Deploy the contract using Hardhat.
 
-## Future Improvements
+npx hardhat run scripts/deploy.js --network sepolia
 
-- real zk-SNARK integration instead of backend-signed withdrawal authorization
-- Layer-2 privacy networks for lower-cost shielded settlement
-- stealth address support for better receiver privacy
-- private DeFi payments routed through shielded liquidity systems
+Update the frontend configuration with the new contract address.
 
-## Demo Positioning
+---
 
-ShadowPay is designed to feel like a real fintech wallet demo while remaining understandable and runnable locally. It is a prototype, but the deposit-note-withdraw flow mirrors the direction a real privacy-preserving payment wallet would take.
+# Security Notice
+
+This project is a prototype created for learning and experimentation.
+
+It does not include:
+
+* full zero-knowledge proof verification
+* Merkle tree privacy sets
+* production security audits
+
+Do not use with real funds.
+
+---
+
+# Future Improvements
+
+Potential upgrades include:
+
+* zk-SNARK proof verification
+* Merkle tree commitment storage
+* stealth addresses
+* multiple deposit denominations
+* privacy analytics dashboard
+* cross-chain privacy transfers
+
+---
+
+# License
+
+MIT License
+
+---
+
+# Author
+
+Aditya Patle
