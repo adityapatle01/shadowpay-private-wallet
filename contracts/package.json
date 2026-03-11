@@ -1,0 +1,15 @@
+{
+  "name": "shadowpay-contracts",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "compile": "node scripts/compile.js",
+    "deploy:sepolia": "node scripts/deploy-sepolia.js",
+    "smoke:sepolia": "node scripts/demo-pool-flow.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "ethers": "^6.15.0",
+    "solc": "^0.8.30"
+  }
+}
